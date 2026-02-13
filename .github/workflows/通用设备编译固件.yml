@@ -13,7 +13,7 @@ env:
   REPO_URL: https://github.com/immortalwrt/immortalwrt
   REPO_BRANCH: master
   FEEDS_CONF: feeds.conf.default
-  # 注意：这里指定了你上传的配置文件名，必须一致！
+  # 务必确保你的配置文件名是 s805.config
   CONFIG_FILE: s805.config
   DIY_P1_SH: diy-part1.sh
   DIY_P2_SH: diy-part2.sh
@@ -40,7 +40,8 @@ jobs:
         sudo -E apt-get -y autoremove --purge
         sudo -E apt-get clean
         sudo timedatectl set-timezone "$TZ"
-        mkdir -p /workdir
+        # ↓↓↓ 之前报错就是这里缺了 sudo，现在修好了 ↓↓↓
+        sudo mkdir -p /workdir
         sudo chown $USER:$GROUPS /workdir
 
     - name: 克隆 ImmortalWrt 源码
@@ -65,9 +66,9 @@ jobs:
 
     - name: 加载自定义配置 (.config)
       run: |
-        # 这一步把你的 files 文件夹复制到源码里
+        # 处理 files 文件夹 (你的 ech-workers 程序)
         [ -d "files" ] && mv files openwrt/files
-        # 这一步把你的 s805.config 复制为 .config
+        # 处理配置文件
         [ -e $CONFIG_FILE ] && mv $CONFIG_FILE openwrt/.config
         chmod +x $DIY_P2_SH
         cd openwrt
@@ -82,7 +83,7 @@ jobs:
         find dl -size -1024c -exec ls -l {} \;
         find dl -size -1024c -exec rm -f {} \;
 
-    - name: 编译固件 (这就开始啦)
+    - name: 编译固件
       id: compile
       run: |
         cd openwrt
@@ -103,7 +104,7 @@ jobs:
         echo "status=success" >> $GITHUB_OUTPUT
 
     - name: 上传固件到 Artifacts
-      uses: actions/upload-artifact@v4
+      uses: actions/upload-artifact@v3
       if: steps.organize.outputs.status == 'success' && !cancelled()
       with:
         name: OpenWrt_firmware${{ env.DEVICE_NAME }}${{ env.FILE_DATE }}

@@ -13,7 +13,7 @@ env:
   REPO_URL: https://github.com/immortalwrt/immortalwrt
   REPO_BRANCH: master
   FEEDS_CONF: feeds.conf.default
-  # 务必确保你的配置文件名是 s805.config
+  # 请确保你的配置文件名是 s805.config
   CONFIG_FILE: s805.config
   DIY_P1_SH: diy-part1.sh
   DIY_P2_SH: diy-part2.sh
@@ -28,7 +28,7 @@ jobs:
 
     steps:
     - name: 检查代码仓库
-      uses: actions/checkout@v3
+      uses: actions/checkout@v4
 
     - name: 初始化编译环境
       env:
@@ -40,7 +40,6 @@ jobs:
         sudo -E apt-get -y autoremove --purge
         sudo -E apt-get clean
         sudo timedatectl set-timezone "$TZ"
-        # ↓↓↓ 之前报错就是这里缺了 sudo，现在修好了 ↓↓↓
         sudo mkdir -p /workdir
         sudo chown $USER:$GROUPS /workdir
 
@@ -54,9 +53,14 @@ jobs:
     - name: 加载自定义 Feeds (如果有)
       run: |
         [ -e $FEEDS_CONF ] && mv $FEEDS_CONF openwrt/feeds.conf.default
-        chmod +x $DIY_P1_SH
-        cd openwrt
-        $GITHUB_WORKSPACE/$DIY_P1_SH
+        # 增加判断：只有文件存在时才执行，避免报错
+        if [ -f $DIY_P1_SH ]; then
+          chmod +x $DIY_P1_SH
+          cd openwrt
+          $GITHUB_WORKSPACE/$DIY_P1_SH
+        else
+          echo "提示：没有找到 diy-part1.sh，跳过自定义 Feeds 设置。"
+        fi
 
     - name: 更新并安装 Feeds
       run: |
@@ -66,13 +70,18 @@ jobs:
 
     - name: 加载自定义配置 (.config)
       run: |
-        # 处理 files 文件夹 (你的 ech-workers 程序)
+        # 处理 files 文件夹
         [ -d "files" ] && mv files openwrt/files
         # 处理配置文件
         [ -e $CONFIG_FILE ] && mv $CONFIG_FILE openwrt/.config
-        chmod +x $DIY_P2_SH
-        cd openwrt
-        $GITHUB_WORKSPACE/$DIY_P2_SH
+        # 增加判断：只有文件存在时才执行
+        if [ -f $DIY_P2_SH ]; then
+          chmod +x $DIY_P2_SH
+          cd openwrt
+          $GITHUB_WORKSPACE/$DIY_P2_SH
+        else
+           echo "提示：没有找到 diy-part2.sh，跳过自定义配置修改。"
+        fi
 
     - name: 下载依赖包
       id: package
@@ -98,10 +107,16 @@ jobs:
       id: organize
       if: env.UPLOAD_FIRMWARE == 'true' && !cancelled()
       run: |
-        cd openwrt/bin/targets/*/*
-        rm -rf packages
-        echo "FIRMWARE=$PWD" >> $GITHUB_ENV
-        echo "status=success" >> $GITHUB_OUTPUT
+        # 增加判断，防止没有文件导致 cd 报错
+        if [ -d "openwrt/bin/targets" ]; then
+          cd openwrt/bin/targets/*/*
+          rm -rf packages
+          echo "FIRMWARE=$PWD" >> $GITHUB_ENV
+          echo "status=success" >> $GITHUB_OUTPUT
+        else
+          echo "错误：编译似乎失败了，没有找到 bin 目录。"
+          exit 1
+        fi
 
     - name: 上传固件到 Artifacts
       uses: actions/upload-artifact@v4

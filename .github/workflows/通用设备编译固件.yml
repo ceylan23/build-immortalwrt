@@ -1,4 +1,4 @@
-name: 玩客云 S805 最终版 (语法修复)
+name: 玩客云 S805 (21.02 救砖版)
 
 on:
   workflow_dispatch:
@@ -11,12 +11,13 @@ on:
 
 env:
   REPO_URL: https://github.com/immortalwrt/immortalwrt
-  REPO_BRANCH: master
+  # 强烈建议用 21.02，这是玩客云最稳定的版本，不要用 master
+  REPO_BRANCH: openwrt-21.02
   TZ: Asia/Shanghai
 
 jobs:
   build:
-    runs-on: ubuntu-22.04
+    runs-on: ubuntu-20.04
 
     steps:
     - name: 检查代码仓库
@@ -48,23 +49,26 @@ jobs:
         ./scripts/feeds update -a
         ./scripts/feeds install -a
 
-    # 🔥🔥🔥 强制生成配置文件 🔥🔥🔥
+    # 🔥🔥🔥 修正后的配置写入 (Target 结构已修复) 🔥🔥🔥
     - name: 生成配置文件
       run: |
         cd openwrt
         cat > .config <<EOF
-        CONFIG_TARGET_meson8b=y
-        CONFIG_TARGET_meson8b_meson8b=y
-        CONFIG_TARGET_meson8b_meson8b_DEVICE_thunder-onecloud=y
+        # 1. 目标机型 (玩客云 S805 修正版)
+        CONFIG_TARGET_amlogic=y
+        CONFIG_TARGET_amlogic_meson8b=y
+        CONFIG_TARGET_amlogic_meson8b_DEVICE_thunder-onecloud=y
+        
+        # 2. 固件格式
         CONFIG_TARGET_ROOTFS_TARGZ=y
         CONFIG_TARGET_ROOTFS_SQUASHFS=y
         CONFIG_USES_EXT4=y
         CONFIG_USES_SQUASHFS=y
+
+        # 3. USB 网络共享
         CONFIG_PACKAGE_kmod-usb-core=y
         CONFIG_PACKAGE_kmod-usb2=y
         CONFIG_PACKAGE_kmod-usb-net=y
-        CONFIG_PACKAGE_kmod-usb-ohci=y
-        CONFIG_PACKAGE_kmod-usb-uhci=y
         CONFIG_PACKAGE_kmod-usb-net-rndis=y
         CONFIG_PACKAGE_kmod-usb-net-cdc-ether=y
         CONFIG_PACKAGE_kmod-usb-net-cdc-ncm=y
@@ -73,20 +77,36 @@ jobs:
         CONFIG_PACKAGE_usbmuxd=y
         CONFIG_PACKAGE_libimobiledevice=y
         CONFIG_PACKAGE_usbutils=y
+
+        # 4. Python3 (21.02 分支兼容配置)
         CONFIG_PACKAGE_python3=y
         CONFIG_PACKAGE_python3-base=y
         CONFIG_PACKAGE_python3-pip=y
         CONFIG_PACKAGE_python3-light=y
+
+        # 5. TurboACC (S805 必备)
         CONFIG_PACKAGE_luci-app-turboacc=y
         CONFIG_PACKAGE_luci-app-turboacc_INCLUDE_OFFLOADING=y
         CONFIG_PACKAGE_luci-app-turboacc_INCLUDE_BBR_CCA=y
         CONFIG_PACKAGE_luci-app-turboacc_INCLUDE_SHORTCUT_FE=y
         CONFIG_PACKAGE_kmod-tcp-bbr=y
+
+        # 6. 文件系统
         CONFIG_PACKAGE_kmod-fs-ext4=y
         CONFIG_PACKAGE_kmod-fs-vfat=y
         CONFIG_PACKAGE_kmod-fs-exfat=y
         CONFIG_PACKAGE_kmod-fs-ntfs3=y
         CONFIG_PACKAGE_automount=y
+
+        # 7. LuCI 界面
+        CONFIG_PACKAGE_luci=y
+        CONFIG_PACKAGE_luci-base=y
+        CONFIG_PACKAGE_luci-ssl=y
+        CONFIG_PACKAGE_luci-mod-admin-full=y
+        CONFIG_PACKAGE_luci-i18n-base-zh-cn=y
+        CONFIG_PACKAGE_luci-theme-argon=y
+        
+        # 8. 常用工具
         CONFIG_PACKAGE_curl=y
         CONFIG_PACKAGE_wget-ssl=y
         CONFIG_PACKAGE_htop=y
@@ -95,18 +115,6 @@ jobs:
         CONFIG_PACKAGE_openssh-sftp-server=y
         CONFIG_PACKAGE_unzip=y
         CONFIG_PACKAGE_screen=y
-        CONFIG_PACKAGE_luci=y
-        CONFIG_PACKAGE_luci-base=y
-        CONFIG_PACKAGE_luci-ssl=y
-        CONFIG_PACKAGE_luci-mod-admin-full=y
-        CONFIG_PACKAGE_luci-i18n-base-zh-cn=y
-        CONFIG_PACKAGE_luci-i18n-firewall-zh-cn=y
-        CONFIG_PACKAGE_luci-i18n-turboacc-zh-cn=y
-        CONFIG_PACKAGE_luci-theme-argon=y
-        CONFIG_PACKAGE_luci-app-upnp=y
-        CONFIG_PACKAGE_luci-i18n-upnp-zh-cn=y
-        CONFIG_PACKAGE_luci-app-autoreboot=y
-        CONFIG_PACKAGE_luci-i18n-autoreboot-zh-cn=y
         EOF
 
     - name: 下载依赖包
@@ -131,10 +139,8 @@ jobs:
 
     - name: 整理输出文件
       id: organize
-      # 🔥 修复点：这里加上了 ${{ }} 防止 YAML 解析错误 🔥
       if: ${{ !cancelled() }}
       run: |
-        # 只要 bin 目录存在就算成功
         if [ -d "openwrt/bin" ]; then
           echo "FIRMWARE=$PWD/openwrt/bin" >> $GITHUB_ENV
           echo "status=success" >> $GITHUB_OUTPUT

@@ -1,25 +1,18 @@
-name: 编译玩客云(S805) ImmortalWrt 固件
+name: 玩客云 S805 最终版 (强制配置)
 
 on:
   workflow_dispatch:
     inputs:
       ssh:
-        description: 'SSH 连接 (用于排错，一般不选)'
+        description: 'SSH 连接'
         required: false
         default: 'false'
         type: boolean
 
 env:
   REPO_URL: https://github.com/immortalwrt/immortalwrt
+  # 建议使用 master 或 openwrt-23.05，这里用 master 配合你的配置
   REPO_BRANCH: master
-  FEEDS_CONF: feeds.conf.default
-  # 请确保你的配置文件名是 s805.config
-  CONFIG_FILE: s805.config
-  DIY_P1_SH: diy-part1.sh
-  DIY_P2_SH: diy-part2.sh
-  UPLOAD_BIN_DIR: false
-  UPLOAD_FIRMWARE: true
-  UPLOAD_RELEASE: true
   TZ: Asia/Shanghai
 
 jobs:
@@ -50,38 +43,73 @@ jobs:
         git clone -q --single-branch --depth=1 --branch $REPO_BRANCH $REPO_URL openwrt
         ln -sf /workdir/openwrt $GITHUB_WORKSPACE/openwrt
 
-    - name: 加载自定义 Feeds (如果有)
-      run: |
-        [ -e $FEEDS_CONF ] && mv $FEEDS_CONF openwrt/feeds.conf.default
-        # 增加判断：只有文件存在时才执行，避免报错
-        if [ -f $DIY_P1_SH ]; then
-          chmod +x $DIY_P1_SH
-          cd openwrt
-          $GITHUB_WORKSPACE/$DIY_P1_SH
-        else
-          echo "提示：没有找到 diy-part1.sh，跳过自定义 Feeds 设置。"
-        fi
-
     - name: 更新并安装 Feeds
       run: |
         cd openwrt
         ./scripts/feeds update -a
         ./scripts/feeds install -a
 
-    - name: 加载自定义配置 (.config)
+    # 🔥🔥🔥 核心修改：直接在这里生成配置文件，不再依赖外部文件 🔥🔥🔥
+    - name: 生成配置文件
       run: |
-        # 处理 files 文件夹
-        [ -d "files" ] && mv files openwrt/files
-        # 处理配置文件
-        [ -e $CONFIG_FILE ] && mv $CONFIG_FILE openwrt/.config
-        # 增加判断：只有文件存在时才执行
-        if [ -f $DIY_P2_SH ]; then
-          chmod +x $DIY_P2_SH
-          cd openwrt
-          $GITHUB_WORKSPACE/$DIY_P2_SH
-        else
-           echo "提示：没有找到 diy-part2.sh，跳过自定义配置修改。"
-        fi
+        cd openwrt
+        # 下面这就是你刚才发给我的配置内容
+        cat > .config <<EOF
+        CONFIG_TARGET_meson8b=y
+        CONFIG_TARGET_meson8b_meson8b=y
+        CONFIG_TARGET_meson8b_meson8b_DEVICE_thunder-onecloud=y
+        CONFIG_TARGET_ROOTFS_TARGZ=y
+        CONFIG_TARGET_ROOTFS_SQUASHFS=y
+        CONFIG_USES_EXT4=y
+        CONFIG_USES_SQUASHFS=y
+        CONFIG_PACKAGE_kmod-usb-core=y
+        CONFIG_PACKAGE_kmod-usb2=y
+        CONFIG_PACKAGE_kmod-usb-net=y
+        CONFIG_PACKAGE_kmod-usb-ohci=y
+        CONFIG_PACKAGE_kmod-usb-uhci=y
+        CONFIG_PACKAGE_kmod-usb-net-rndis=y
+        CONFIG_PACKAGE_kmod-usb-net-cdc-ether=y
+        CONFIG_PACKAGE_kmod-usb-net-cdc-ncm=y
+        CONFIG_PACKAGE_kmod-usb-net-huawei-cdc-ncm=y
+        CONFIG_PACKAGE_kmod-usb-net-ipheth=y
+        CONFIG_PACKAGE_usbmuxd=y
+        CONFIG_PACKAGE_libimobiledevice=y
+        CONFIG_PACKAGE_usbutils=y
+        CONFIG_PACKAGE_python3=y
+        CONFIG_PACKAGE_python3-base=y
+        CONFIG_PACKAGE_python3-pip=y
+        CONFIG_PACKAGE_python3-light=y
+        CONFIG_PACKAGE_luci-app-turboacc=y
+        CONFIG_PACKAGE_luci-app-turboacc_INCLUDE_OFFLOADING=y
+        CONFIG_PACKAGE_luci-app-turboacc_INCLUDE_BBR_CCA=y
+        CONFIG_PACKAGE_luci-app-turboacc_INCLUDE_SHORTCUT_FE=y
+        CONFIG_PACKAGE_kmod-tcp-bbr=y
+        CONFIG_PACKAGE_kmod-fs-ext4=y
+        CONFIG_PACKAGE_kmod-fs-vfat=y
+        CONFIG_PACKAGE_kmod-fs-exfat=y
+        CONFIG_PACKAGE_kmod-fs-ntfs3=y
+        CONFIG_PACKAGE_automount=y
+        CONFIG_PACKAGE_curl=y
+        CONFIG_PACKAGE_wget-ssl=y
+        CONFIG_PACKAGE_htop=y
+        CONFIG_PACKAGE_nano=y
+        CONFIG_PACKAGE_bash=y
+        CONFIG_PACKAGE_openssh-sftp-server=y
+        CONFIG_PACKAGE_unzip=y
+        CONFIG_PACKAGE_screen=y
+        CONFIG_PACKAGE_luci=y
+        CONFIG_PACKAGE_luci-base=y
+        CONFIG_PACKAGE_luci-ssl=y
+        CONFIG_PACKAGE_luci-mod-admin-full=y
+        CONFIG_PACKAGE_luci-i18n-base-zh-cn=y
+        CONFIG_PACKAGE_luci-i18n-firewall-zh-cn=y
+        CONFIG_PACKAGE_luci-i18n-turboacc-zh-cn=y
+        CONFIG_PACKAGE_luci-theme-argon=y
+        CONFIG_PACKAGE_luci-app-upnp=y
+        CONFIG_PACKAGE_luci-i18n-upnp-zh-cn=y
+        CONFIG_PACKAGE_luci-app-autoreboot=y
+        CONFIG_PACKAGE_luci-i18n-autoreboot-zh-cn=y
+        EOF
 
     - name: 下载依赖包
       id: package
@@ -105,29 +133,27 @@ jobs:
 
     - name: 整理输出文件
       id: organize
-      if: env.UPLOAD_FIRMWARE == 'true' && !cancelled()
+      if: !cancelled()
       run: |
-        # 增加判断，防止没有文件导致 cd 报错
-        if [ -d "openwrt/bin/targets" ]; then
-          cd openwrt/bin/targets/*/*
-          rm -rf packages
-          echo "FIRMWARE=$PWD" >> $GITHUB_ENV
+        # 只要 bin 目录存在就算成功
+        if [ -d "openwrt/bin" ]; then
+          echo "FIRMWARE=$PWD/openwrt/bin" >> $GITHUB_ENV
           echo "status=success" >> $GITHUB_OUTPUT
         else
-          echo "错误：编译似乎失败了，没有找到 bin 目录。"
+          echo "错误：bin 目录不存在！"
           exit 1
         fi
 
-    - name: 上传固件到 Artifacts
+    - name: 上传固件
       uses: actions/upload-artifact@v4
       if: steps.organize.outputs.status == 'success' && !cancelled()
       with:
-        name: OpenWrt_firmware${{ env.DEVICE_NAME }}${{ env.FILE_DATE }}
-        path: ${{ env.FIRMWARE }}
+        name: OneThing_S805_${{ env.FILE_DATE }}
+        path: openwrt/bin/targets/**/*
 
-    - name: 发布到 Release
+    - name: 发布 Release
       uses: softprops/action-gh-release@v1
       if: steps.organize.outputs.status == 'success' && !cancelled()
       with:
         tag_name: ${{ env.DEVICE_NAME }}${{ env.FILE_DATE }}
-        files: ${{ env.FIRMWARE }}/*
+        path: openwrt/bin/targets/**/*
